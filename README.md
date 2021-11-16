@@ -29,3 +29,9 @@ config.preprocessing_train_eval = "independent_dropout(.2);"
 
 E.g. this means with prob .2, each site is dropped for each patient.
 
+## Links
+
+- [Main deepchest repo](https://github.com/epfl-iglobalhealth/LUS-COVID-main)
+
+- [Student deepchest paper (draft)](https://www.overleaf.com/project/61910ac2312c4addcf45741f)
+
