@@ -148,7 +148,7 @@ def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoade
     labels = labels_df.values.flatten()
     labels_dict = dict(zip(indices, labels))
 
-    folds = utils.split_k_folds(indices, labels, k=config.num_folds)
+    folds = utils.split_k_folds(indices, labels, k=config.num_folds, random_state=config.random_state)
     train_folds_indices = list(range(0, config.num_folds))
 
     test_indices = folds[config.test_fold_index]
