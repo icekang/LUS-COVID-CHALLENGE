@@ -23,8 +23,12 @@ from torch.utils.data import DataLoader
 import deepchest.calibration
 import deepchest.metrics
 
+import torch.nn.functional as F
 
-def show_splits_info(train_indices, test_indices, valid_indices, *, dataset, label_names):
+
+def show_splits_info(
+    train_indices, test_indices, valid_indices, *, dataset, label_names
+):
     console = Console()
 
     table = Table(show_header=True)
@@ -42,7 +46,8 @@ def show_splits_info(train_indices, test_indices, valid_indices, *, dataset, lab
             total = len(indices)
             count = Counter([dataset[i]["label"] for i in indices])
             cols = [split_name, str(total)] + [
-                f"{count[i]} ({count[i] / total * 100:.0f}%)" for i in range(len(label_names))
+                f"{count[i]} ({count[i] / total * 100:.0f}%)"
+                for i in range(len(label_names))
             ]
             table.add_row(*cols)
 
@@ -69,8 +74,12 @@ def log_metrics(title: str, metrics: dict, *, color=None) -> None:
         + metrics["false_negative"]
     )
     accuracy = (metrics["true_positive"] + metrics["true_negative"]) / n
-    sensitivity = metrics["true_positive"] / (metrics["true_positive"] + metrics["false_negative"])
-    specificity = metrics["true_negative"] / (metrics["true_negative"] + metrics["false_positive"])
+    sensitivity = metrics["true_positive"] / (
+        metrics["true_positive"] + metrics["false_negative"]
+    )
+    specificity = metrics["true_negative"] / (
+        metrics["true_negative"] + metrics["false_positive"]
+    )
 
     def maybe_metric_str(metric_name):
         if metric_name in metrics:
@@ -86,21 +95,24 @@ def log_metrics(title: str, metrics: dict, *, color=None) -> None:
             f"sensitivity {sensitivity:.4f}\t"
             f"specificity {specificity:.4f}\t"
             f"AUC {metrics['roc_auc']:.4f}\t"
-            f"balanced accuracy: {metrics['balanced_accuracy']:.4f}\t" + maybe_metric_str("time"),
+            f"balanced accuracy: {metrics['balanced_accuracy']:.4f}\t"
+            + maybe_metric_str("time"),
             color,
         )
     )
 
 
 def plot_auc(fpr, tpr):
-    fig = px.line(x=fpr, y=tpr, labels={"x": "False Positive Rate", "y": "True Positive Rate"})
+    fig = px.line(
+        x=fpr, y=tpr, labels={"x": "False Positive Rate", "y": "True Positive Rate"}
+    )
     fig.update_xaxes(range=[0, 1])
     fig.update_yaxes(range=[0, 1])
     return fig
 
 
 def plot_calibration_curve(mean_predicted_value, fraction_of_positives):
-    """Plot calibration curve. """
+    """Plot calibration curve."""
     fig = px.line(
         x=mean_predicted_value,
         y=fraction_of_positives,
@@ -118,9 +130,11 @@ def compute_metrics(labels, logits, label_names):
     criterion = BCEWithLogitsLoss()
 
     loss = criterion(logits, labels.float())
-    ece = deepchest.calibration.compute_expected_calibration_error(logits, labels.float())
+    ece = deepchest.calibration.compute_expected_calibration_error(
+        logits, labels.float()
+    )
 
-    predictions = logits > 0.0
+    predictions = logits > 0.5
 
     true_positive = ((predictions == 1) & (labels == 1)).sum().item()
     true_negative = ((predictions == 0) & (labels == 0)).sum().item()
@@ -150,7 +164,9 @@ def compute_metrics(labels, logits, label_names):
         "roc": plot_auc(fpr, tpr),
         "mean_predicted_value": mean_predicted_value,
         "fraction_of_positives": fraction_of_positives,
-        "ece_curve": plot_calibration_curve(mean_predicted_value, fraction_of_positives),
+        "ece_curve": plot_calibration_curve(
+            mean_predicted_value, fraction_of_positives
+        ),
         "labels": labels,
         "logits": logits,
     }
@@ -188,12 +204,11 @@ def model_evaluation(
             mask = batch["mask"].to(device)
             labels = torch.flatten(batch["label"]).to(device)
 
-            scores = model(images, sites, mask)
+            scores = model(images)
             scores = torch.flatten(scores)  # if binary
 
             epoch_labels.append(labels)
             epoch_scores.append(scores)
-
     return epoch_scores.value, epoch_labels.value
 
 
@@ -316,7 +331,11 @@ def exclusive_cumsum(t, dim=-1):
     shape[dim] = 1
     zeros = torch.zeros(shape, dtype=t.dtype, device=t.device)
     return torch.cat(
-        [zeros, torch.cumsum(t, dim=dim).narrow(dim=dim, start=0, length=t.shape[dim] - 1)], dim=dim
+        [
+            zeros,
+            torch.cumsum(t, dim=dim).narrow(dim=dim, start=0, length=t.shape[dim] - 1),
+        ],
+        dim=dim,
     )
 
 

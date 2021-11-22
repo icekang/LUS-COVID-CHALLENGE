@@ -38,6 +38,7 @@ class Concatenate:
 
     @property
     def value(self):
+        # print("self.values[0].shape", self.values[0].shape)
         if self.values[0].ndim == 0:
             return torch.stack(self.values)
         else:
