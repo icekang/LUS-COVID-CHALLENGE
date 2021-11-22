@@ -1,10 +1,10 @@
 import setuptools
 
 setuptools.setup(
-    name="deepchest",  # Replace with your own username
+    name="icekang",  # Replace with your own username
     version="0.1",
     author="MLO - EPFL",
-    author_email="ignacio.aleman@epfl.ch",
+    author_email="naravich.chutisilp@epfl.ch",
     description="DeepChest lung ultrasound challenge",
     url="https://github.com/epfl-iglobalhealth/LUS-COVID-CHALLENGE",
     packages=setuptools.find_packages(),

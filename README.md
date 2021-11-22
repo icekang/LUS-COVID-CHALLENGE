@@ -1,15 +1,23 @@
 # LUS-COVID-CHALLENGE
 
+## Introduction
 
-## Introduction  
-
-[Lung ultrasound (LUS) ](https://www.youtube.com/watch?v=_Q0cTG3ZlHk&amp;ab_channel=MedCram-MedicalLecturesExplainedCLEARLY)is a non-invasive, pragmatic and time-tested tool for evaluating and discriminating respiratory pathology at the bedside. Indeed, when LUS is interpreted by *expert* clinicians, its predictive accuracy can match CT scanners. Recently, ultrasound-on-a-chip technology has made LUS extremely portable ([pluggable into a mobile phone](https://www.butterflynetwork.com/uk/)) and cheap enough (2000USD vs 30,000USD+) for use in resource limited settings. This makes it particularly useful in COVID-19, where its portability enables decentralized respiratory evaluations (at home or in triage centers rather than in the hospital) and simple inter-patient disinfection.  However, while acquisition may be simple, interpretation is comparatively challenging, prone to subjective bias as well as a lack of standardization.  The challenge is to use deep learning methods to predict if a patient has COVID-19 based on the LUS images!
-
+[Lung ultrasound (LUS) ](https://www.youtube.com/watch?v=_Q0cTG3ZlHk&ab_channel=MedCram-MedicalLecturesExplainedCLEARLY)is a non-invasive, pragmatic and time-tested tool for evaluating and discriminating respiratory pathology at the bedside. Indeed, when LUS is interpreted by _expert_ clinicians, its predictive accuracy can match CT scanners. Recently, ultrasound-on-a-chip technology has made LUS extremely portable ([pluggable into a mobile phone](https://www.butterflynetwork.com/uk/)) and cheap enough (2000USD vs 30,000USD+) for use in resource limited settings. This makes it particularly useful in COVID-19, where its portability enables decentralized respiratory evaluations (at home or in triage centers rather than in the hospital) and simple inter-patient disinfection. However, while acquisition may be simple, interpretation is comparatively challenging, prone to subjective bias as well as a lack of standardization. The challenge is to use deep learning methods to predict if a patient has COVID-19 based on the LUS images!
 
 ## Installation
 
+For cloud and local computer
+
 ```
 pip install -e .
+```
+
+To install torch with CUDA, install after setup. For example, installing torch1.10 with CUDA 11.3 would be
+
+```
+# install torch and torchvision separately
+pip install -e .
+pip install torch==1.10.0+cu113 torchvision==0.11.1+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 ```
 
 ## Notebook
@@ -20,7 +28,7 @@ Some comments:
 
 - Nb folds just means how the data is split for the data loaders, 5 folds == .8 / .2 train / test split
 - The data loader includes data augmentation, see dataset.py in the deepchest folder.
-- Additional preprocessing is done as seen in the preprocessing.py file. 
+- Additional preprocessing is done as seen in the preprocessing.py file.
 - Indices are saved in the model_saved folder.
 
 ```
@@ -29,12 +37,13 @@ config.preprocessing_train_eval = "independent_dropout(.2);"
 
 E.g. this means with prob .2, each site is dropped for each patient.
 
-## Google cloud compute 
+## Google cloud compute
 
 ### Spawn a new VM on Google Cloud Platform
 
 - Make sure that the `lus-nfs` instance is running. It serves the NFS drives to store our data.
 - Create an instance with a V100 GPU. Put your name in the instance, e.g. `jb-1`, you are responsible for stopping it and removing it when it is not used anymore.
+
 ```
 INSTANCE_NAME="your-name-1"
 gcloud compute instances start lus-nfs && \
@@ -55,12 +64,16 @@ gcloud beta compute \
     --reservation-affinity=any \
     --disk=auto-delete=no,name=imagenet-ssd,device-name=imagenet-ssd,mode=ro
 ```
+
 - Connect to the machine `gcloud compute ssh $INSTANCE_NAME`.
 - Create and use your own directory on the network drive in `/data`.
+
 ```bash
 mkdir /data/YOUR_USERNAME
 ```
+
 - To work on the code base, you can clone this repo and install it in the `--user` space.
+
 ```bash
 # Install your own deepchest from your data directory on the drive
 cd /data/YOUR_USERNAME
@@ -68,6 +81,7 @@ git clone https://github.com/epfl-iglobalhealth/LUS-COVID-CHALLENGE
 cd LUS-COVID-CHALLENGE
 pip install --user -e .
 ```
+
 - You can stop this machine or delete it. `/data` is persistent.
 
 ### Edit files remotely
@@ -86,4 +100,3 @@ Note that you are editing files on the `lus-nfs` instance which has no GPU. To r
 - [Main deepchest repo](https://github.com/epfl-iglobalhealth/LUS-COVID-main)
 
 - [Student deepchest paper (draft)](https://www.overleaf.com/project/61910ac2312c4addcf45741f)
-
