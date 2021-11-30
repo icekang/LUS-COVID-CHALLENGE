@@ -204,7 +204,7 @@ def model_evaluation(
             mask = batch["mask"].to(device)
             labels = torch.flatten(batch["label"]).to(device)
 
-            scores = model(images)
+            scores = model(images, sites, mask)
             scores = torch.flatten(scores)  # if binary
 
             epoch_labels.append(labels)
