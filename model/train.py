@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from model import get_model
+from model import get_model, get_smaller_resnet
 
 
 def train_model(
@@ -117,11 +117,11 @@ def train_model(
                     },
                     os.path.join(
                         config.save_dir,
-                        f"best_model_resnet18_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds1-2",
+                        f"best_model_smaller_resnet_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
                     ),
                 )
                 print(
-                    f"saved best_model_resnet18_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds1-2",
+                    f"saved best_model_smaller_resnet_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
                 )
 
         print()
@@ -142,7 +142,7 @@ def train_model(
 def get_config():
     config = ml_collections.ConfigDict()
 
-    config.batch_size = 32
+    config.batch_size = 16
     config.num_steps = 300
 
     # See preprocessing.py, if you replace with ";" no preprocessing is done
@@ -159,7 +159,7 @@ def get_config():
 
     # dataset
     config.images_directory = "dataset/images/"
-    config.labels_file = "dataset/labels.ds1/diagnostic.csv"
+    config.labels_file = "dataset/labels/diagnostic.csv"
 
     # Fold seed
     config.random_state = 0
@@ -182,25 +182,27 @@ def train_kfold():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(config.random_state)
 
-    for i in range(4, config.num_folds):
+    for i in [1, 2, 3]:
+        # for i in range(3, config.num_folds):
         config.test_fold_index = i
         print(f'k-fold #{config.test_fold_index} {"=" * 20}')
         (
             train_loader,
             test_loader,
-            validation_loader,
+            _,
         ) = deepchest.dataset.get_data_loaders(config=config)
 
-        model = get_model().to(device)
+        # model = get_model().to(device)
+        model = get_smaller_resnet().to(device)
         criterion = nn.BCELoss()
         params = (
-            list(model.fc1.parameters())
-            + list(model.fc3.parameters())
-            + list(model.pos_embedding.parameters())
+            model.parameters()
+            # list(model.fc1.parameters())
+            # + list(model.fc3.parameters())
+            # + list(model.pos_embedding.parameters())
         )
         optimizer_conv = optim.Adam(params, lr=1e-4)
         exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=5, gamma=0.1)
-
         model = train_model(
             model,
             device,
@@ -222,6 +224,12 @@ def train_kfold():
         print(scores)
         print(train_metrics)
 
+
+# def load_checkpoint(model, optim, path):
+#     checkpoint = torch.load(path)
+#     print('loaded checkpoint from ', path)
+#     model.load_state_dict(checkpoint['model_state_dict'])
+#     optim.load_state_dict(checkpoint['optimizer_state_dict'])
 
 if __name__ == "__main__":
     train_kfold()

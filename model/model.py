@@ -377,7 +377,7 @@ class ResNetOnLUS(nn.Module):
             # x is now batch_size x 3 x 224 x 224
             x = self.feature_extractor(each_image_site)
             x = self.avg(x)
-            x = torch.squeeze(x)
+            x = torch.reshape(x, (x.shape[0], x.shape[1]))
             feature_vectors.append(x)
 
         # position embedding of size batch_size x num_sites x embedding_dim

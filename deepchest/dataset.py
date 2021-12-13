@@ -64,7 +64,9 @@ class LungUltrasoundPatientDataset(torch.utils.data.Dataset):
         labels: Optional[Dict[int, int]] = None,
     ):
         if not pathlib.Path(images_directory).exists():
-            raise FileNotFoundError("Images directory not found. Path given: "+images_directory)
+            raise FileNotFoundError(
+                "Images directory not found. Path given: " + images_directory
+            )
         self.images_directory = pathlib.Path(images_directory)
         self.labels = labels
 
@@ -72,7 +74,9 @@ class LungUltrasoundPatientDataset(torch.utils.data.Dataset):
         if labels:
             self.length = len(labels)
         else:
-            self.length = len(set(ImageInfo.from_filename(f).patient_id for f in self.images_list))
+            self.length = len(
+                set(ImageInfo.from_filename(f).patient_id for f in self.images_list)
+            )
 
     def __len__(self):
         return self.length
@@ -116,7 +120,8 @@ def collate_fn(samples, image_transform, preprocessing_fn=None):
     # and stack them together for each patient.
     samples_per_key["images"] = [
         torch.stack(
-            [torch.FloatTensor(np.array(image_transform(im))) for im in patient_images], dim=0
+            [torch.FloatTensor(np.array(image_transform(im))) for im in patient_images],
+            dim=0,
         )
         for patient_images in samples_per_key["images"]
     ]
@@ -125,7 +130,8 @@ def collate_fn(samples, image_transform, preprocessing_fn=None):
     max_length = max(map(len, samples_per_key["mask"]))
     for k in ["images", "sites", "mask"]:
         batch[k] = torch.stack(
-            [utils.pad_dim_with_zeros(t, 0, max_length) for t in samples_per_key[k]], dim=0
+            [utils.pad_dim_with_zeros(t, 0, max_length) for t in samples_per_key[k]],
+            dim=0,
         )
 
     # Preprocessing
@@ -137,18 +143,58 @@ def collate_fn(samples, image_transform, preprocessing_fn=None):
     return batch
 
 
+def debias_distribution(
+    labels_df: pd.DataFrame, config, sampling="over"
+) -> pd.DataFrame:
+    num_neg = len(labels_df[labels_df["def_covid_r"] == 0])
+
+    if sampling == "over":
+        num_pos = len(labels_df[labels_df["def_covid_r"] == 1])
+        diff = num_pos - num_neg
+        for i in range(diff // num_neg + 1):
+            if i != diff // num_neg:
+                num_to_add = num_neg
+            else:
+                num_to_add = diff % num_neg
+            unbiased_neg_labels_df = labels_df[labels_df["def_covid_r"] == 0].sample(
+                n=num_to_add, random_state=config.random_state
+            )
+            # add randomly sampled neg to the labels
+            labels_df = pd.concat([unbiased_neg_labels_df, labels_df])
+
+    elif sampling == "under":
+        unbiased_pos_labels_df = labels_df[labels_df["def_covid_r"] == 1].sample(
+            n=num_neg, random_state=config.random_state
+        )
+        # randomly remove pos from the labels
+        labels_df = pd.concat(
+            [unbiased_pos_labels_df, labels_df[labels_df["def_covid_r"] == 0]]
+        )
+
+    # shuffle
+    labels_df = labels_df.sample(frac=1, random_state=config.random_state)
+    labels_df.index.name = "study_id"
+    labels_df = labels_df.sort_index()
+    return labels_df
+
+
 def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoader]]:
     if not pathlib.Path(config.labels_file).exists():
         with open(pathlib.Path(__file__).parent / "../dataset/README.md") as md:
             markdown = Markdown(md.read())
         Console().print(markdown)
-        raise FileNotFoundError("Label file not found. Path given: "+config.labels_file)
+        raise FileNotFoundError(
+            "Label file not found. Path given: " + config.labels_file
+        )
     labels_df = pd.read_csv(config.labels_file, index_col=0)
+    # labels_df = debias_distribution(labels_df, config, sampling="over")
     indices = labels_df.index
     labels = labels_df.values.flatten()
     labels_dict = dict(zip(indices, labels))
 
-    folds = utils.split_k_folds(indices, labels, k=config.num_folds, random_state=config.random_state)
+    folds = utils.split_k_folds(
+        indices, labels, k=config.num_folds, random_state=config.random_state
+    )
     train_folds_indices = list(range(0, config.num_folds))
 
     test_indices = folds[config.test_fold_index]
@@ -163,15 +209,17 @@ def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoade
     else:
         validation_indices = []
 
-    train_folds = [fold for fold_idx, fold in enumerate(folds) if fold_idx in train_folds_indices]
+    train_folds = [
+        fold for fold_idx, fold in enumerate(folds) if fold_idx in train_folds_indices
+    ]
     train_indices = np.concatenate(train_folds)
 
     if config.export_folds_indices_file:
-        serie_train = pd.Series(train_indices, name='train_indices')
-        serie_test = pd.Series(test_indices, name='test_indices')
-        serie_valid = pd.Series(validation_indices, name='validation_indices')
-        df_indices = pd.concat([serie_train,serie_test,serie_valid], axis=1)
-        df_indices.to_csv(config.export_folds_indices_file,index=False)
+        serie_train = pd.Series(train_indices, name="train_indices")
+        serie_test = pd.Series(test_indices, name="test_indices")
+        serie_valid = pd.Series(validation_indices, name="validation_indices")
+        df_indices = pd.concat([serie_train, serie_test, serie_valid], axis=1)
+        df_indices.to_csv(config.export_folds_indices_file, index=False)
 
     transform_vanilla = transforms.Compose(
         [
@@ -182,7 +230,9 @@ def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoade
 
     transform_with_augmentation = transforms.Compose(
         [
-            transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.25),
+            transforms.ColorJitter(
+                brightness=0.25, contrast=0.25, saturation=0.25, hue=0.25
+            ),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomResizedCrop(
                 224,
@@ -201,7 +251,11 @@ def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoade
 
     label_names = utils.get_label_names(config.labels_file)
     utils.show_splits_info(
-        train_indices, test_indices, validation_indices, dataset=dataset, label_names=label_names
+        train_indices,
+        test_indices,
+        validation_indices,
+        dataset=dataset,
+        label_names=label_names,
     )
 
     train_pp, eval_pp = config.preprocessing_train_eval.split(";")
@@ -209,7 +263,9 @@ def get_data_loaders(config) -> Tuple[DataLoader, DataLoader, Optional[DataLoade
 
     train_subset = Subset(dataset, train_indices)
     train_collate = functools.partial(
-        collate_fn, image_transform=transform_with_augmentation, preprocessing_fn=train_pp
+        collate_fn,
+        image_transform=transform_with_augmentation,
+        preprocessing_fn=train_pp,
     )
     batch_sampler = BatchSampler(
         len(train_subset), batch_size=config.batch_size, num_steps=config.num_steps
