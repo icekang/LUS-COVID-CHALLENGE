@@ -197,6 +197,7 @@ def model_evaluation(
     epoch_labels = deepchest.metrics.Concatenate()
     epoch_scores = deepchest.metrics.Concatenate()
 
+    # batch_count = 0
     with torch.no_grad():
         for batch_idx, batch in enumerate(data_loader):
             images = batch["images"].to(device)
@@ -209,6 +210,11 @@ def model_evaluation(
 
             epoch_labels.append(labels)
             epoch_scores.append(scores)
+            # batch_count += images.shape[0]
+            # print(f"running evaluation: {batch_count}/{len(data_loader)}", end="\r")
+            # if batch_count >= len(data_loader):
+            #     print(" " * 30, end="\r")
+            #     break
     return epoch_scores.value, epoch_labels.value
 
 

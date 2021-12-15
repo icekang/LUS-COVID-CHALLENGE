@@ -21,51 +21,46 @@ class TransferedLearned(nn.Module):
         self.feature_extractor.fc = nn.Identity(num_ftrs)
 
         # embedding layer for position from sites inputs
-        embedding_dim = 12
+        embedding_dim = num_ftrs # since, we will concatenate the position to the feature vector of an image
         self.pos_embedding = nn.Embedding(
             num_embeddings=12, embedding_dim=embedding_dim
         )
 
         # add new fc layers
-        self.fc1 = nn.Linear(num_ftrs + embedding_dim, 1024)
-        self.fc3 = nn.Linear(1024, 1)
+        self.fc1 = nn.Linear(num_ftrs + embedding_dim, 512)
+        self.fc3 = nn.Linear(512, 1)
 
     def forward(self, images, sites, masks):
         # images is a tensor of batch_size x num_sites x 3 x 224 x 224
 
         feature_vectors = []
-        for i in range(images.shape[1]):
-            each_image_site = images[:, i, :, :, :]
-            each_image_site = each_image_site.view(
-                images.shape[0], images.shape[2], images.shape[3], images.shape[4]
-            )
+        batch_size, num_sites, channels, width, height = images.shape[0], images.shape[1], images.shape[2], images.shape[3], images.shape[4]
+        all_images = images.view(-1, channels, width, height) # same as ("b k h w c -> (b k) h w c")
 
-            # x is now batch_size x 3 x 224 x 224
-            x = self.feature_extractor(each_image_site)
-            feature_vectors.append(x)
+        flatten_mask = masks.view(-1) # same as einops.rearrange(mask, "b k -> (b k)")
+        flatten_indices = torch.where(flatten_mask)[0] # where(flatten_make) yields tuple of a tensor of indices where mask is 1
 
-        # position embedding of size batch_size x num_sites x embedding_dim
-        embedded_sites = self.pos_embedding(sites)
+        masked_images = all_images[flatten_indices]
 
-        # stack all feature vectors to a new dimension of size batch_size x num_sites x num_features (512 for ResNet18)
-        x = torch.stack(feature_vectors, dim=1)
+        x = self.feature_extractor(masked_images)
+
+        # position embedding of sites 
+        flatten_site = sites.view(-1) # flatten "b k -> (b k)"
+        masked_sites = flatten_site[flatten_indices]
+        embedded_sites = self.pos_embedding(masked_sites)
+        embedded_sites = embedded_sites.view(batch_size, num_sites, -1) # reshape to batch_size x num_sites x embedding_dim
+        embedding_dim = embedded_sites.shape[-1]
 
         # concatenate feature vectors and position embeddings (batch_size x num_sites x [num_features + embedding_dim])
+        x = x.view(batch_size, num_sites, -1) # reshape to batch_size x num_sites x num_features
+        num_features = x.shape[-1]
         x = torch.cat([x, embedded_sites], dim=2)
 
-        masks = masks == 1  # convert to boolean
-        masks = masks.unsqueeze(-1).expand(
-            x.size()
-        )  # expand from batch_size x num_sites to batch_size x num_sites x num_features (512 for ResNet18)
-
-        x = x * masks  # apply masks and preserver the original tensor dimensions
-
         x = F.relu(self.fc1(x))
-        # x = self.dropout(x)
-        # x = F.relu(self.fc2(x))
 
         # average all feature vectors
         x = torch.mean(x, dim=1)  # batch_size x [num_features + embedding_dim]
+        assert x.shape == (batch_size, num_features + embedding_dim) # sanity check
 
         # x = self.dropout(x)
         x = self.fc3(x)

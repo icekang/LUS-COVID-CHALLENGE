@@ -5,6 +5,9 @@ import ml_collections
 import deepchest
 import os
 
+import numpy as np
+from scipy import stats
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -22,6 +25,7 @@ def train_model(
     scheduler,
     config,
     num_epochs=25,
+    seed=None
 ):
     since = time.time()
 
@@ -83,8 +87,15 @@ def train_model(
                         # print('model.fc3.weight.data', model.fc3.weight.data)
 
                 # statistics
-                running_loss += loss.item() * images.size(0)
-                running_corrects += torch.sum(preds == labels.data)
+                label_names = deepchest.utils.get_label_names(config.labels_file)
+                scores, labels = deepchest.utils.model_evaluation(model, test_loader, device)
+                if phase == "train":
+                    model.train()
+                train_metrics = deepchest.utils.compute_metrics(labels, scores, label_names)
+                running_loss = train_metrics['loss'].item()
+                running_corrects = train_metrics['balanced_accuracy']
+                # running_loss += loss.item() * images.size(0)
+                # running_corrects += torch.sum(preds == labels.data)
                 print(
                     f"iteration: {batch_i}, running_loss: {running_loss}, correct: {running_corrects}"
                     + " " * 10,
@@ -94,35 +105,60 @@ def train_model(
 
                 if image_count >= max_iteration:
                     break
-            if phase == "train":
-                scheduler.step()
-            print("running_corrects", running_corrects)
-            epoch_loss = running_loss / image_count
-            epoch_acc = running_corrects / image_count
+                if phase == "train":
+                    scheduler.step()
+                
+                # save best model 
+                if (running_corrects > best_acc):
+                    best_acc = running_corrects
+                    best_model_wts = copy.deepcopy(model.state_dict())
+                    torch.save(
+                        {
+                            "seed": seed,
+                            "batch_i": batch_i,
+                            "epoch": epoch,
+                            "model_state_dict": model.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "loss": running_loss,
+                            "acc": running_corrects,
+                        },
+                        os.path.join(
+                            config.save_dir,
+                            f"best_model_fast_TL_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
+                        ),
+                    )
+            label_names = deepchest.utils.get_label_names(config.labels_file)
+            scores, labels = deepchest.utils.model_evaluation(model, test_loader, device)
+            train_metrics = deepchest.utils.compute_metrics(labels, scores, label_names)
+            epoch_loss = train_metrics['loss'].item()
+            epoch_acc = train_metrics['balanced_accuracy']
+            # epoch_loss = running_loss / batch_i
+            # epoch_acc = running_corrects / batch_i
 
             print("{} Loss: {:.4f} Acc: {:.4f}".format(phase, epoch_loss, epoch_acc))
             print("Last prediction", preds, "\nLabels.data", labels.data)
 
-            # deep copy the model
-            if (phase == "val") and (epoch_acc > best_acc):
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": epoch_loss,
-                        "acc": epoch_acc,
-                    },
-                    os.path.join(
-                        config.save_dir,
-                        f"best_model_smaller_resnet_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
-                    ),
-                )
-                print(
-                    f"saved best_model_smaller_resnet_sigmoid_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
-                )
+            # # deep copy the model
+            # if (phase == "val") and (epoch_acc > best_acc):
+            #     best_acc = epoch_acc
+            #     best_model_wts = copy.deepcopy(model.state_dict())
+            #     torch.save(
+            #         {
+            #             "epoch": epoch,
+            #             "model_state_dict": model.state_dict(),
+            #             "optimizer_state_dict": optimizer.state_dict(),
+            #             "loss": epoch_loss,
+            #             "acc": epoch_acc,
+            #         },
+            #         os.path.join(
+            #             config.save_dir,
+            #             f"best_model_fast_TL_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
+            #         ),
+            #     )
+            #     print(
+            #         "saved",
+            #         f"best_model_fast_TL_epoch{epoch}_test_fold_index{config.test_fold_index}.ds2-2",
+            #     )
 
         print()
 
@@ -152,7 +188,7 @@ def get_config():
 
     # If validation split is false, then train will have 4/5 of data and test 1/5
     # If validation split is true, then train will have 3/5 of data, test 1/5 and val 1/5
-    config.num_folds = 5
+    config.num_folds = 2
 
     # gpu workers
     config.num_workers = 0
@@ -173,33 +209,43 @@ def get_config():
     config.delta_from_test_index_to_validation_index = 1
     return config
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
 
-def train_kfold():
+def train_kfold(seed=None):
     config = get_config()
 
     if torch.cuda.is_available():
         print("CUDA is available")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(config.random_state)
+    if seed is None:
+        set_seed(config.random_state)
+    else:
+        set_seed(seed)
 
-    for i in [1, 2, 3]:
-        # for i in range(3, config.num_folds):
+    metric = dict()
+    for i in range(config.num_folds):
         config.test_fold_index = i
         print(f'k-fold #{config.test_fold_index} {"=" * 20}')
         (
             train_loader,
             test_loader,
-            _,
+            validation_loader,
         ) = deepchest.dataset.get_data_loaders(config=config)
 
         # model = get_model().to(device)
         model = get_smaller_resnet().to(device)
         criterion = nn.BCELoss()
         params = (
-            model.parameters()
-            # list(model.fc1.parameters())
-            # + list(model.fc3.parameters())
-            # + list(model.pos_embedding.parameters())
+            # # for simple model
+            # model.parameters()
+
+            # for transfer learning
+            list(model.fc1.parameters())
+            + list(model.fc3.parameters())
+            + list(model.pos_embedding.parameters())
         )
         optimizer_conv = optim.Adam(params, lr=1e-4)
         exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=5, gamma=0.1)
@@ -212,7 +258,8 @@ def train_kfold():
             optimizer_conv,
             exp_lr_scheduler,
             config,
-            num_epochs=4,
+            num_epochs=2,
+            seed=seed,
         )
         model.eval()
         model.to(device)
@@ -223,7 +270,14 @@ def train_kfold():
 
         print(scores)
         print(train_metrics)
+        metric[i] = train_metrics
+        torch.save(metric, f'metric-{seed}.ds2-2')
 
+        del train_loader
+        del test_loader
+        del validation_loader
+        torch.cuda.empty_cache()  # clear memory
+    return metric
 
 # def load_checkpoint(model, optim, path):
 #     checkpoint = torch.load(path)
@@ -232,4 +286,28 @@ def train_kfold():
 #     optim.load_state_dict(checkpoint['optimizer_state_dict'])
 
 if __name__ == "__main__":
-    train_kfold()
+    variance_sum = 0.
+    first_diff = None
+    metrics = []
+    for i in range(5):
+        print(f'running {i}x2CV (seed={i})')
+
+        metric = train_kfold(seed=i)
+        metrics.append(metric)
+
+        score_diff_1 = metric[0]['balanced_accuracy']
+        score_diff_2 = metric[1]['balanced_accuracy']
+        print(f'score_diff_1 {score_diff_1}\nscore_diff_2 {score_diff_2}')
+        score_mean = (score_diff_1 + score_diff_2) / 2.
+        score_var = ((score_diff_1 - score_mean)**2 +
+                     (score_diff_2 - score_mean)**2)
+        variance_sum += score_var
+        if first_diff is None:
+            first_diff = score_diff_1
+    torch.save(metrics, f'metrics.ds2-2')
+    numerator = first_diff
+    denominator = np.sqrt(1/5. * variance_sum)
+    t_stat = numerator / denominator
+
+    pvalue = stats.t.sf(np.abs(t_stat), 5)*2.
+    print( 't_stat', float(t_stat), 'pvalue', float(pvalue) ) 
